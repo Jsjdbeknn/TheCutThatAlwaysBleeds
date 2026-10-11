@@ -7,18 +7,20 @@
 <style>
 :root{--bg:#fff;--fg:#555}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#fff;--fg:#555}}
-html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
-canvas{display:block;cursor:crosshair}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;touch-action:none;overscroll-behavior:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+canvas{display:block;cursor:crosshair;touch-action:none}
 #hint{position:fixed;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom,0px));text-align:center;font:12px/1 system-ui,sans-serif;color:var(--fg);opacity:.55;pointer-events:none;letter-spacing:.04em;transition:opacity 1s}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hint">drag to slash · C clear · M mute</div>
+<div id="hint"></div>
 <script>
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 const L=document.createElement('canvas'),lx=L.getContext('2d');
 const hint=document.getElementById('hint');
+const COARSE=matchMedia('(pointer:coarse)').matches;
+hint.textContent=COARSE?'drag to slash · double-tap to clear':'drag to slash · double-click or C to clear · M mute';
 let W,H,dpr,paper;
 function makePaper(){
   const t=document.createElement('canvas');t.width=t.height=200;
@@ -28,7 +30,7 @@ function makePaper(){
 }
 let bgc;
 function buildBg(){
-  bgc=document.createElement('canvas');bgc.width=W*dpr;bgc.height=H*dpr;
+  bgc=document.createElement('canvas');bgc.width=Math.max(1,Math.round(W*dpr));bgc.height=Math.max(1,Math.round(H*dpr));
   const b=bgc.getContext('2d');b.scale(dpr,dpr);
   b.fillStyle='#fdfcfb';b.fillRect(0,0,W,H);
   b.fillStyle=paper;b.fillRect(0,0,W,H);
@@ -39,10 +41,10 @@ function buildBg(){
 function resize(){
   const old=document.createElement('canvas');old.width=L.width;old.height=L.height;
   if(L.width)old.getContext('2d').drawImage(L,0,0);
-  dpr=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
-  cv.width=L.width=W*dpr;cv.height=L.height=H*dpr;
+  dpr=Math.min(window.devicePixelRatio||1,2);W=Math.max(1,innerWidth||document.documentElement.clientWidth||1);H=Math.max(1,innerHeight||document.documentElement.clientHeight||1);
+  cv.width=L.width=Math.max(1,Math.round(W*dpr));cv.height=L.height=Math.max(1,Math.round(H*dpr));
   cv.style.width=W+'px';cv.style.height=H+'px';
-  lx.setTransform(1,0,0,1,0,0);lx.drawImage(old,0,0);
+  lx.setTransform(1,0,0,1,0,0);if(old.width>0&&old.height>0)lx.drawImage(old,0,0);
   ctx.setTransform(dpr,0,0,dpr,0,0);lx.setTransform(dpr,0,0,dpr,0,0);
   makePaper();
 }
@@ -101,19 +103,15 @@ function center(c,g,off){
 }
 
 /* ---------- wound rendering ---------- */
-function wound(c,g,full){
+function wound(c,g){
   c.save();c.lineJoin='round';c.lineCap='round';
-  if(full){
-    c.filter='blur(8px)';c.fillStyle='rgba(150,15,20,.18)';poly(c,g,3.6);c.fill();
-    c.filter='blur(3px)';c.fillStyle='rgba(120,10,15,.26)';poly(c,g,2);c.fill();
-  }
   c.filter='blur(1.4px)';c.fillStyle='rgba(40,3,6,.35)';poly(c,g,1.35);c.fill();
-  if(full)c.filter='blur(.7px)';
+  c.filter='blur(.7px)';
   c.fillStyle='#74090f';poly(c,g,1);c.fill();
   c.fillStyle='#98101a';poly(c,g,.78);c.fill();
   c.fillStyle='#b9171f';poly(c,g,.52);c.fill();
   c.fillStyle='#d3303a';poly(c,g,.24);c.fill();
-  if(full)c.filter='blur(.6px)';c.strokeStyle='rgba(255,235,230,.38)';c.lineWidth=.9;
+  c.strokeStyle='rgba(255,235,230,.38)';c.lineWidth=.9;
   center(c,g,i=>-g.hw[i]*.35);c.stroke();
   c.restore();
 }
@@ -170,7 +168,7 @@ function step(){
     if(p.r<p.max){
       p.r+=.035;
       const g=lx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
-      g.addColorStop(0,'rgba(120,8,14,.05)');g.addColorStop(1,'rgba(120,8,14,0)');
+      g.addColorStop(0,'rgba(120,8,14,.03)');g.addColorStop(1,'rgba(120,8,14,0)');
       lx.fillStyle=g;lx.beginPath();lx.arc(p.x,p.y,p.r,0,7);lx.fill();
     }
   }
@@ -193,7 +191,7 @@ function step(){
       lx.beginPath();lx.moveTo(ox-w*.2,oy);lx.lineTo(d.x-w*.2,d.y);lx.stroke();
     }
     d.r=d.w*.75*taper+.7;
-    if(d.len>d.max){d.live=false;d.settle=1;bead(lx,d.x,d.y,d.r);drip();}
+    if(d.len>d.max){d.live=false;d.settle=1;bead(lx,d.x,d.y,d.r);}
   }
   drips=drips.filter(d=>d.live||false);pools=pools.filter(p=>p.r<p.max||p.delay>0);
 }
@@ -273,9 +271,7 @@ function audioTick(){
   if(!AC)return;const t=AC.currentTime,v=Math.min(1,tipV/1.8),now=performance.now();
   swGain.gain.setTargetAtTime(.32*Math.pow(v,1.6),t,.05);
   swFilter.frequency.setTargetAtTime(350+2600*v,t,.06);
-  if(fS>.5&&prevF<=.5&&now-lastShing>500){lastShing=now;shing();}
   prevF=fS;
-  if(tipV>.04&&tipV<.6&&now-lastSq>150-90*Math.min(1,tipV/.5)){lastSq=now;squelch();}
 }
 function silence(){if(!AC)return;swGain.gain.setTargetAtTime(0,AC.currentTime,.05);}
 function splashSound(i){
@@ -300,9 +296,14 @@ addEventListener('keydown',e=>{if(e.key==='m'||e.key==='M'){muted=!muted;if(mast
 
 /* ---------- input ---------- */
 let drawing=false,pts=[],cuts=[],spray=[],bledIdx=0,shake=0,fS=0;
+let downT=0,downX=0,downY=0,moved=false,lastTapT=0,lastTapX=0,lastTapY=0;
+function clearAll(){
+  lx.save();lx.setTransform(1,0,0,1,0,0);lx.clearRect(0,0,L.width,L.height);lx.restore();
+  drips=[];pools=[];cuts=[];spray=[];
+}
 function bleedAt(g,i,f){
   const p=g.pts[i],w=g.hw[i]||1.5;
-  pools.push({x:p.x,y:p.y,r:w*.8,max:w*(1.4+Math.random()*1.6)*(1+1.2*(1-f)),delay:Math.random()*25});
+  pools.push({x:p.x,y:p.y,r:w*.8,max:w*(1.15+Math.random()*.5),delay:Math.random()*25});
   if(Math.random()<.45+.5*(1-f)){
     drips.push({x:p.x+g.nx[i]*(Math.random()-.5)*w,y:p.y,w:Math.max(1.8,w*(.6+Math.random()*.5)),
       v:0,delay:4+Math.random()*25,len:0,max:(30+Math.random()*190)*(1+.6*(1-f)),pause:0,seed:Math.random()*100,live:true});
@@ -312,16 +313,25 @@ function gape(n){
   const a=[];for(let i=0;i<n;i++){const u=Math.min(1,(n-1-i)*2/90);a.push(.25+.75*u*u*(3-2*u));}return a;
 }
 cv.addEventListener('pointerdown',e=>{
-  if(e.button>0)return;try{cv.setPointerCapture(e.pointerId);}catch(_){}
+  if(e.button>0||!e.isPrimary)return;try{cv.setPointerCapture(e.pointerId);}catch(_){}
+  downT=performance.now();downX=e.clientX;downY=e.clientY;moved=false;
   initAudio();drawing=true;bledIdx=0;fS=0;pts=[{x:e.clientX,y:e.clientY,t:performance.now()}];hint.style.opacity=0;
 });
 cv.addEventListener('pointermove',e=>{
-  if(!drawing)return;
+  if(!drawing||!e.isPrimary)return;
+  if(Math.hypot(e.clientX-downX,e.clientY-downY)>12)moved=true;
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e],tt=performance.now();
   {const tt=performance.now();for(const ev of (evs.length?evs:[e])){const lp=pts[pts.length-1];if(!lp||Math.hypot(ev.clientX-lp.x,ev.clientY-lp.y)>2.5)pts.push({x:ev.clientX,y:ev.clientY,t:tt});}}
 });
-function end(){
+function end(e){
   if(!drawing)return;drawing=false;
+  if(e&&e.type==='pointerup'&&!moved){
+    const t=performance.now();
+    if(t-downT<300){
+      if(t-lastTapT<400&&Math.hypot(downX-lastTapX,downY-lastTapY)<50){clearAll();lastTapT=0;}
+      else{lastTapT=t;lastTapX=downX;lastTapY=downY;}
+    }
+  }
   silence();const g=build(pts,7);pts=[];
   if(!g)return;
   const n=g.pts.length;
@@ -332,15 +342,14 @@ cv.addEventListener('pointerup',end);
 cv.addEventListener('pointercancel',end);
 addEventListener('keydown',e=>{
   if(e.key==='c'||e.key==='C'||e.key===' '){
-    lx.save();lx.setTransform(1,0,0,1,0,0);lx.clearRect(0,0,L.width,L.height);lx.restore();
-    drips=[];pools=[];cuts=[];spray=[];
+    clearAll();
   }
 });
 
 /* ---------- loop ---------- */
 function ease(t){const c=1.4;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2);}
 function line(a,b){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
-function splat(r,x,y){tick();
+function splat(r,x,y){
   lx.fillStyle='#7a0a10';lx.beginPath();lx.arc(x,y,r,0,7);lx.fill();
   lx.fillStyle='rgba(255,255,255,.55)';lx.beginPath();lx.arc(x-r*.3,y-r*.3,r*.25,0,7);lx.fill();
 }
@@ -348,7 +357,7 @@ function emitSpray(){
   const n=pts.length;if(n<6||spray.length>250)return;
   const p=pts[n-1],q=pts[n-6];
   let dx=p.x-q.x,dy=p.y-q.y;const m=Math.hypot(dx,dy)||1;dx/=m;dy/=m;
-  const k=1+Math.floor(fS*5*Math.random());splashSound(fS);
+  const k=1+Math.floor(fS*5*Math.random());
   for(let j=0;j<k;j++){
     const side=Math.random()<.5?-1:1,sp=(2+Math.random()*7)*(.4+1.1*fS);
     spray.push({x:p.x,y:p.y,vx:dx*sp*.6-dy*side*sp*.6+(Math.random()-.5)*1.5,
@@ -359,7 +368,7 @@ function frame(){
   const now=performance.now();
   step();
   for(let i=cuts.length-1;i>=0;i--){
-    const c=cuts[i];if(now-c.t0>=c.dur){wound(lx,c.g,true);cuts.splice(i,1);}
+    const c=cuts[i];if(now-c.t0>=c.dur){wound(lx,c.g);cuts.splice(i,1);}
   }
   // tip speed while holding
   if(drawing&&pts.length>2){
@@ -373,7 +382,7 @@ function frame(){
     if(fS>.3&&dl>2)shake=Math.max(shake,fS*3.5);
   }
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.drawImage(bgc,0,0,W,H);
+  if(bgc&&bgc.width>0&&bgc.height>0)ctx.drawImage(bgc,0,0,W,H);
   
   
   
@@ -381,11 +390,11 @@ function frame(){
   shake*=.86;if(shake<.05)shake=0;
   const sx=(Math.random()-.5)*shake,sy=(Math.random()-.5)*shake;
   ctx.setTransform(dpr,0,0,dpr,sx*dpr,sy*dpr);
-  ctx.save();ctx.setTransform(1,0,0,1,sx*dpr,sy*dpr);ctx.drawImage(L,0,0);ctx.restore();
+  ctx.save();ctx.setTransform(1,0,0,1,sx*dpr,sy*dpr);if(L.width>0&&L.height>0)ctx.drawImage(L,0,0);ctx.restore();
   // settling cuts after release
   for(const c of cuts){
     const t=Math.min(1,(now-c.t0)/c.dur),e=ease(t);
-    wound(ctx,{pts:c.g.pts,nx:c.g.nx,ny:c.g.ny,hw:c.g.hw.map((w,i)=>w*(c.base[i]+(1-c.base[i])*e))},false);
+    wound(ctx,{pts:c.g.pts,nx:c.g.nx,ny:c.g.ny,hw:c.g.hw.map((w,i)=>w*(c.base[i]+(1-c.base[i])*e))});
   }
   // blood spray
   ctx.lineCap='round';
@@ -402,7 +411,7 @@ function frame(){
     const g=build(pts,7);
     if(g){
       const n=g.pts.length,gp=gape(n);
-      wound(ctx,{pts:g.pts,nx:g.nx,ny:g.ny,hw:g.hw.map((w,i)=>w*gp[i])},false);
+      wound(ctx,{pts:g.pts,nx:g.nx,ny:g.ny,hw:g.hw.map((w,i)=>w*gp[i])});
       for(;bledIdx<n-11;bledIdx++)if(Math.random()<1/(6+6*fS))bleedAt(g,bledIdx,fS*.6);if(n>30&&drips.length<90&&Math.random()<.3)bleedAt(g,Math.floor(Math.random()*(n-10)),fS*.5);
     }
     const n=pts.length,k=Math.min(n-1,28);
